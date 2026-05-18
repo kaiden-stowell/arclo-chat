@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>arclo-chat</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <aside id="sidebar">
+      <div class="brand">arclo-chat</div>
+      <div class="section-title">Channels</div>
+      <ul id="channels"></ul>
+      <button id="add-channel" type="button">+ New channel</button>
+      <div class="user-box">
+        <label for="username">Display name</label>
+        <input id="username" placeholder="your name" autocomplete="off">
+      </div>
+    </aside>
+    <main id="main">
+      <header id="channel-header">#general</header>
+      <div id="messages"></div>
+      <form id="composer">
+        <input id="input" placeholder="Message #general" autocomplete="off">
+        <button type="submit">Send</button>
+      </form>
+    </main>
+  </div>
+  <div id="status">connecting…</div>
+  <script src="client.js"></script>
+</body>
+</html>
