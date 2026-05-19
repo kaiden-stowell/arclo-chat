@@ -2,12 +2,15 @@
 
 const path = require('path');
 const http = require('http');
+const https = require('https');
 const express = require('express');
 const { WebSocketServer } = require('ws');
 const QRCode = require('qrcode');
 
 const { getLanInterface, normalizeIp, ipInSubnet } = require('./src/network');
 const { Store } = require('./src/store');
+const { loadOrCreateCert } = require('./src/tls');
+const { setupPush, webpush } = require('./src/push');
 
 const PORT = Number(process.env.PORT) || 4040;
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'data', 'arclo-chat.db');
@@ -17,9 +20,28 @@ const lan = getLanInterface();
 const HOST = process.env.HOST || (lan && lan.address) || '127.0.0.1';
 
 const store = new Store(DB_PATH);
+const DATA_DIR = path.dirname(DB_PATH);
+
+// HTTPS is required for service workers and Web Push. Generate (and reuse) a
+// self-signed certificate; fall back to HTTP only if that fails.
+let tls = null;
+try {
+  tls = loadOrCreateCert(DATA_DIR, lan && lan.address);
+} catch (err) {
+  console.error('Could not set up HTTPS, falling back to HTTP:', err.message);
+}
+const scheme = tls ? 'https' : 'http';
+
+// Stable VAPID keys for Web Push — regenerating them would break subscriptions.
+let vapidKeys = null;
+try {
+  vapidKeys = setupPush(DATA_DIR);
+} catch (err) {
+  console.error('Could not set up push notifications:', err.message);
+}
 
 // URL a phone on the same network uses — always the LAN address, never loopback.
-const chatUrl = `http://${(lan && lan.address) || HOST}:${PORT}`;
+const chatUrl = `${scheme}://${(lan && lan.address) || HOST}:${PORT}`;
 let qrSvg = '';
 
 /**
@@ -77,6 +99,22 @@ app.post('/api/channels/:id/messages', (req, res) => {
   res.status(201).json({ message });
 });
 
+// --- Push notifications ----------------------------------------------------
+
+app.get('/api/push/key', (req, res) => {
+  if (!vapidKeys) return res.status(503).json({ error: 'push notifications unavailable' });
+  res.json({ key: vapidKeys.publicKey });
+});
+
+app.post('/api/push/subscribe', (req, res) => {
+  const { subscription, user } = req.body || {};
+  if (!subscription || !subscription.endpoint) {
+    return res.status(400).json({ error: 'subscription is required' });
+  }
+  store.savePushSubscription(subscription, user);
+  res.status(201).json({ ok: true });
+});
+
 // --- QR code (open the chat on a phone on the same network) ----------------
 
 function qrPage(url, svg) {
@@ -118,7 +156,9 @@ app.get('/qr', (req, res) => {
 
 // --- WebSocket API ---------------------------------------------------------
 
-const server = http.createServer(app);
+const server = tls
+  ? https.createServer({ key: tls.key, cert: tls.cert }, app)
+  : http.createServer(app);
 const wss = new WebSocketServer({ server });
 
 function send(ws, obj) {
@@ -260,8 +300,31 @@ function deliverableTo(message) {
   return (client) => (isDm ? store.canAccess(message.channel, client.user) : true);
 }
 
+// Deliver a Web Push for a message to every subscriber except its author.
+function sendPushForMessage(message) {
+  if (!vapidKeys) return;
+  const channel = store.getChannel(message.channel);
+  const isDm = channel && channel.type === 'dm';
+  const context = isDm ? 'direct message' : `#${channel ? channel.name : message.channel}`;
+  const payload = JSON.stringify({
+    title: `${message.user} · ${context}`,
+    body: message.text.slice(0, 160),
+    tag: message.channel,
+  });
+  for (const sub of store.listPushSubscriptions()) {
+    if (sub.user === message.user) continue;
+    if (isDm && !store.canAccess(message.channel, sub.user)) continue;
+    webpush.sendNotification(sub.subscription, payload).catch((err) => {
+      if (err && (err.statusCode === 404 || err.statusCode === 410)) {
+        store.deletePushSubscription(sub.endpoint);
+      }
+    });
+  }
+}
+
 store.on('message', (message) => {
   broadcast({ type: 'message', message }, deliverableTo(message));
+  sendPushForMessage(message);
 });
 
 store.on('message-updated', (message) => {
@@ -273,7 +336,8 @@ store.on('channels', (channels) => {
 });
 
 server.listen(PORT, HOST, async () => {
-  console.log(`arclo-chat listening on http://${HOST}:${PORT}`);
+  console.log(`arclo-chat listening on ${scheme}://${HOST}:${PORT}`);
+  if (!tls) console.log('Running over HTTP — push notifications are disabled.');
   if (lan) {
     console.log(`Same-network access: anyone on ${lan.address}/${lan.netmask} — others are rejected.`);
   } else {

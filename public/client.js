@@ -349,7 +349,8 @@ function handle(data) {
 }
 
 function connect() {
-  ws = new WebSocket(`ws://${location.host}`);
+  const wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${wsProto}://${location.host}`);
   ws.onopen = () => {
     setStatus('connected', 'ok');
     if (username) send({ type: 'identify', user: username });
@@ -368,6 +369,7 @@ $('#username').addEventListener('change', (e) => {
   username = e.target.value.trim();
   localStorage.setItem('arclo-user', username);
   send({ type: 'identify', user: me() });
+  registerPush(); // re-associate the push subscription with the new name
 });
 
 $('#add-channel').addEventListener('click', () => {
@@ -397,6 +399,7 @@ $('#composer').addEventListener('submit', (e) => {
 const BASE_TITLE = 'arclo-chat';
 let unread = 0;
 let audioCtx = null;
+let pushSubscribed = false;
 
 function updateTitle() {
   document.title = unread > 0 ? `(${unread}) ${BASE_TITLE}` : BASE_TITLE;
@@ -436,20 +439,63 @@ function notify(msg) {
   };
 }
 
-/** Runs for every incoming message — alerts unless you are already looking. */
+/** Runs for every incoming message — alerts for every message from others. */
 function handleIncoming(msg) {
-  if (msg.user === me()) return; // never notify about your own messages
-  if (msg.channel === current && document.hasFocus()) return;
-  unread += 1;
-  updateTitle();
+  if (msg.user === me()) return; // never alert about your own messages
   playPing();
-  notify(msg);
+  if (!pushSubscribed) notify(msg); // when push is active it shows the popup
+  if (!document.hasFocus()) {
+    unread += 1;
+    updateTitle();
+  }
+}
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(base64);
+  const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i += 1) out[i] = raw.charCodeAt(i);
+  return out;
+}
+
+/** Register the service worker and subscribe to Web Push for background alerts. */
+async function registerPush() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+  if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+  try {
+    const reg = await navigator.serviceWorker.register('/sw.js');
+    const keyRes = await fetch('/api/push/key');
+    if (!keyRes.ok) return;
+    const { key } = await keyRes.json();
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(key),
+      });
+    }
+    await fetch('/api/push/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ subscription: sub, user: me() }),
+    });
+    pushSubscribed = true;
+  } catch (e) {
+    console.warn('push notifications unavailable:', e && e.message);
+  }
 }
 
 // Browser notification permission and audio must be unlocked by a user gesture.
 function enableAlerts() {
-  if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
-    Notification.requestPermission();
+  if (typeof Notification !== 'undefined') {
+    if (Notification.permission === 'granted') {
+      registerPush();
+    } else if (Notification.permission === 'default') {
+      Notification.requestPermission().then((perm) => {
+        if (perm === 'granted') registerPush();
+      });
+    }
   }
   try {
     audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
@@ -465,6 +511,11 @@ window.addEventListener('focus', () => {
   unread = 0;
   updateTitle();
 });
+
+// Returning visitor who already granted permission — re-subscribe on load.
+if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+  registerPush();
+}
 
 // --- responsive sidebar ----------------------------------------------------
 

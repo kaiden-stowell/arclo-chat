@@ -74,6 +74,12 @@ class Store extends EventEmitter {
         emoji      TEXT NOT NULL,
         PRIMARY KEY (message_id, user, emoji)
       );
+      CREATE TABLE IF NOT EXISTS push_subscriptions (
+        endpoint   TEXT PRIMARY KEY,
+        data       TEXT NOT NULL,
+        user       TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
     `);
   }
 
@@ -284,6 +290,35 @@ class Store extends EventEmitter {
     const message = this.getMessage(messageId);
     this.emit('message-updated', message);
     return message;
+  }
+
+  // --- push subscriptions --------------------------------------------------
+
+  savePushSubscription(subscription, user) {
+    if (!subscription || !subscription.endpoint) return;
+    this.db
+      .prepare(
+        `INSERT INTO push_subscriptions (endpoint, data, user, created_at)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(endpoint) DO UPDATE SET data = excluded.data, user = excluded.user`
+      )
+      .run(
+        subscription.endpoint,
+        JSON.stringify(subscription),
+        String(user || 'anonymous').slice(0, 60),
+        new Date().toISOString()
+      );
+  }
+
+  listPushSubscriptions() {
+    return this.db
+      .prepare('SELECT endpoint, data, user FROM push_subscriptions')
+      .all()
+      .map((r) => ({ endpoint: r.endpoint, subscription: JSON.parse(r.data), user: r.user }));
+  }
+
+  deletePushSubscription(endpoint) {
+    this.db.prepare('DELETE FROM push_subscriptions WHERE endpoint = ?').run(endpoint);
   }
 }
 
