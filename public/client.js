@@ -400,6 +400,7 @@ const BASE_TITLE = 'arclo-chat';
 let unread = 0;
 let audioCtx = null;
 let pushSubscribed = false;
+let notificationsOn = localStorage.getItem('arclo-notify') !== 'off';
 
 function updateTitle() {
   document.title = unread > 0 ? `(${unread}) ${BASE_TITLE}` : BASE_TITLE;
@@ -442,6 +443,7 @@ function notify(msg) {
 /** Runs for every incoming message — alerts for every message from others. */
 function handleIncoming(msg) {
   if (msg.user === me()) return; // never alert about your own messages
+  if (!notificationsOn) return; // notifications muted by the user
   playPing();
   if (!pushSubscribed) notify(msg); // when push is active it shows the popup
   if (!document.hasFocus()) {
@@ -588,6 +590,23 @@ $('#text-smaller').addEventListener('click', () => {
 });
 $('#text-larger').addEventListener('click', () => {
   msgFont = setTextSize(msgFont + 1);
+});
+
+// --- notification on/off toggle --------------------------------------------
+
+function renderNotifToggle() {
+  const btn = $('#notif-toggle');
+  btn.textContent = notificationsOn ? '🔔' : '🔕';
+  btn.title = notificationsOn
+    ? 'Notifications on — click to mute'
+    : 'Notifications muted — click to turn on';
+}
+renderNotifToggle();
+
+$('#notif-toggle').addEventListener('click', () => {
+  notificationsOn = !notificationsOn;
+  localStorage.setItem('arclo-notify', notificationsOn ? 'on' : 'off');
+  renderNotifToggle();
 });
 
 // --- easter egg: 5 clicks on the version reveals the secret QR -------------
