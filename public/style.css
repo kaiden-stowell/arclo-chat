@@ -78,6 +78,13 @@ body {
 }
 #add-channel:hover { color: var(--text); }
 
+#version {
+  padding: 10px 8px 0;
+  font-size: 11px;
+  color: var(--muted);
+  opacity: 0.55;
+}
+
 .user-box { margin-top: auto; padding: 12px 8px 0; }
 .user-box label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
 .user-box input,
