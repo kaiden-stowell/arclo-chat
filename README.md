@@ -29,9 +29,26 @@ arclo-chat enforces the network boundary two ways at once:
 
 Loopback (`127.0.0.1`) is always allowed so you can use the server locally.
 
-## Quick start
+## Install
+
+One line — clones the repo and installs dependencies:
 
 ```bash
+curl -fsSL https://raw.githubusercontent.com/kaiden-stowell/arclo-chat/main/install.sh | bash
+```
+
+Installs into `~/arclo-chat` (override with `ARCLO_DIR`). Requires `git` and
+Node.js 18+. Then start the server:
+
+```bash
+cd ~/arclo-chat && npm start
+```
+
+### Manual install
+
+```bash
+git clone https://github.com/kaiden-stowell/arclo-chat.git
+cd arclo-chat
 npm install
 npm start
 ```
