@@ -28,7 +28,9 @@ function loadOrCreateCert(dir, host) {
   }
 
   const pems = selfsigned.generate([{ name: 'commonName', value: host || 'localhost' }], {
-    days: 3650,
+    // Browsers (Apple, Chrome) reject TLS certificates valid for more than
+    // ~398 days. Keep this at one year; delete data/cert.pem to regenerate.
+    days: 365,
     keySize: 2048,
     algorithm: 'sha256',
     extensions: [{ name: 'subjectAltName', altNames }],
