@@ -1,8 +1,21 @@
 # arclo-chat
 
-A lightweight, Slack-style chat server. Messages live in channels, are delivered
-in real time over WebSocket, and **only devices on the same network can connect** —
-Agent Hub or any other client reaches it through an HTTP/WebSocket API.
+A lightweight, Slack-style chat server. Messages live in channels and direct
+messages, are delivered in real time over WebSocket, persist to SQLite, and
+**only devices on the same network can connect** — Agent Hub or any other
+client reaches it through an HTTP/WebSocket API.
+
+## Features
+
+- **Channels** — public rooms anyone on the network can join and post to.
+- **Direct messages** — private 1-to-1 conversations; only the two members can
+  read or post.
+- **Presence & typing** — see who is online, and live "X is typing…" hints.
+- **Reactions** — toggle emoji reactions on any message.
+- **Edit & delete** — change or remove your own messages (others see the update
+  instantly; deletes leave a tombstone).
+- **Persistent history** — channels, messages, and reactions are stored in a
+  SQLite file and survive restarts.
 
 ## Why "same network only"
 
@@ -24,29 +37,31 @@ npm start
 ```
 
 The console prints the address to open, e.g. `http://192.168.1.20:4040`.
-Open it from any device on the same Wi-Fi/LAN and start chatting.
+Open it from any device on the same Wi-Fi/LAN, set a display name, and chat.
 
 ### Configuration
 
-| Env var | Default            | Purpose                                  |
-|---------|--------------------|------------------------------------------|
-| `PORT`  | `4040`             | Listening port                           |
-| `HOST`  | detected LAN IPv4  | Bind address (e.g. `0.0.0.0` to override) |
+| Env var   | Default                   | Purpose                                  |
+|-----------|---------------------------|------------------------------------------|
+| `PORT`    | `4040`                    | Listening port                           |
+| `HOST`    | detected LAN IPv4         | Bind address (e.g. `0.0.0.0` to override) |
+| `DB_PATH` | `data/arclo-chat.db`      | SQLite database file                     |
 
-The subnet check applies regardless of `HOST`.
+The subnet check applies regardless of `HOST`. The `data/` directory is created
+automatically and is git-ignored.
 
 ## HTTP API (for Agent Hub)
 
-| Method | Path                              | Body                              | Description            |
-|--------|-----------------------------------|-----------------------------------|------------------------|
-| GET    | `/api/health`                     | —                                 | Server + network info  |
-| GET    | `/api/channels`                   | —                                 | List channels          |
-| POST   | `/api/channels`                   | `{ "name": "…" }`                 | Create a channel       |
-| GET    | `/api/channels/:id/messages`      | —                                 | Channel history        |
-| POST   | `/api/channels/:id/messages`      | `{ "user", "text", "source" }`    | Send a message         |
+| Method | Path                          | Body                           | Description           |
+|--------|-------------------------------|--------------------------------|-----------------------|
+| GET    | `/api/health`                 | —                              | Server + network info |
+| GET    | `/api/channels`               | —                              | List channels         |
+| POST   | `/api/channels`               | `{ "name": "…" }`              | Create a channel      |
+| GET    | `/api/channels/:id/messages`  | —                              | Channel history       |
+| POST   | `/api/channels/:id/messages`  | `{ "user", "text", "source" }` | Send a message        |
 
-A message posted over REST is broadcast live to every connected WebSocket client.
-Set `"source": "agent"` so it shows an **agent** badge in the UI.
+A message posted over REST is broadcast live to every connected WebSocket
+client. Set `"source": "agent"` so it shows an **agent** badge in the UI.
 
 ```bash
 curl -X POST http://192.168.1.20:4040/api/channels/general/messages \
@@ -60,21 +75,47 @@ Connect to `ws://<host>:<port>`. All frames are JSON.
 
 **Client → server**
 
-| `type`           | Fields                          |
-|------------------|---------------------------------|
-| `identify`       | `user`                          |
-| `join`           | `channel`                       |
-| `create-channel` | `name`                          |
-| `message`        | `channel`, `text`, `source?`    |
+| `type`           | Fields                       | Notes                                |
+|------------------|------------------------------|--------------------------------------|
+| `identify`       | `user`                       | Sets your display name / presence    |
+| `join`           | `channel`                    | Switch to a channel or DM            |
+| `create-channel` | `name`                       |                                      |
+| `open-dm`        | `user`                       | Open (creating if needed) a DM       |
+| `message`        | `channel`, `text`, `source?` |                                      |
+| `typing`         | —                            | Broadcasts a typing hint             |
+| `edit`           | `messageId`, `text`          | Author only                          |
+| `delete`         | `messageId`                  | Author only                          |
+| `react`          | `messageId`, `emoji`         | Toggles the reaction                 |
 
 **Server → client**
 
-| `type`     | Fields                  |
-|------------|-------------------------|
-| `channels` | `channels[]`            |
-| `history`  | `channel`, `messages[]` |
-| `message`  | `message`               |
-| `error`    | `error`                 |
+| `type`            | Fields                  | Notes                                  |
+|-------------------|-------------------------|----------------------------------------|
+| `channels`        | `channels[]`            |                                        |
+| `dms`             | `dms[]`                 | `{ id, withUser }` for the current user |
+| `presence`        | `users[]`               | Display names currently online         |
+| `active-channel`  | `channel`               | The channel the server moved you into  |
+| `history`         | `channel`, `messages[]` |                                        |
+| `message`         | `message`               | New message                            |
+| `message-updated` | `message`               | Edit, delete, or reaction change       |
+| `typing`          | `channel`, `user`       |                                        |
+| `error`           | `error`                 |                                        |
+
+A `message` object looks like:
+
+```json
+{
+  "id": "1747000000000-ab12cd",
+  "channel": "general",
+  "user": "alice",
+  "text": "hi",
+  "source": "user",
+  "edited": false,
+  "deleted": false,
+  "ts": "2026-05-19T10:00:00.000Z",
+  "reactions": { "👍": ["bob"] }
+}
+```
 
 ## Agent Hub example
 
@@ -87,7 +128,6 @@ CHAT_URL=http://192.168.1.20:4040 npm run agent-example
 
 ## Notes & limits
 
-- Messages and channels are kept in memory (last 500 per channel) — restarting
-  the server clears history. Swap `src/store.js` for a database to persist.
-- The network boundary is the only access control. Add an API key /
-  authentication layer before using on an untrusted LAN.
+- History is bounded to the most recent 1000 messages per channel.
+- The network boundary is the only access control — anyone on the LAN can pick
+  any display name. Add authentication before using on an untrusted network.

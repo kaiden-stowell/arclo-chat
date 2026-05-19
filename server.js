@@ -6,18 +6,20 @@ const express = require('express');
 const { WebSocketServer } = require('ws');
 
 const { getLanInterface, normalizeIp, ipInSubnet } = require('./src/network');
-const { store } = require('./src/store');
+const { Store } = require('./src/store');
 
 const PORT = Number(process.env.PORT) || 4040;
+const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'data', 'arclo-chat.db');
 const lan = getLanInterface();
 // Bind to the LAN interface so the server is not reachable beyond the local
-// network. HOST can override (e.g. 0.0.0.0) but the subnet check below still applies.
+// network. HOST can override (e.g. 0.0.0.0) but the subnet check still applies.
 const HOST = process.env.HOST || (lan && lan.address) || '127.0.0.1';
+
+const store = new Store(DB_PATH);
 
 /**
  * Same-network gate: a connection is allowed only from loopback or from an
- * address inside this machine's LAN subnet. This is the "subnet allowlist"
- * half of the protection; binding to HOST is the other half.
+ * address inside this machine's LAN subnet.
  */
 function isSameNetwork(rawIp) {
   const ip = normalizeIp(rawIp);
@@ -29,10 +31,11 @@ function isSameNetwork(rawIp) {
 const app = express();
 app.use(express.json({ limit: '64kb' }));
 
-// Reject anything not on the same network before it reaches any route.
 app.use((req, res, next) => {
   if (!isSameNetwork(req.socket.remoteAddress)) {
-    return res.status(403).json({ error: 'Forbidden: arclo-chat only accepts connections from the same network.' });
+    return res
+      .status(403)
+      .json({ error: 'Forbidden: arclo-chat only accepts connections from the same network.' });
   }
   next();
 });
@@ -74,17 +77,57 @@ app.post('/api/channels/:id/messages', (req, res) => {
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
+function send(ws, obj) {
+  if (ws.readyState === 1) ws.send(JSON.stringify(obj));
+}
+
+function broadcast(obj, filter) {
+  const payload = JSON.stringify(obj);
+  for (const client of wss.clients) {
+    if (client.readyState === 1 && (!filter || filter(client))) client.send(payload);
+  }
+}
+
+/** Distinct display names of clients that have identified themselves. */
+function onlineUsers() {
+  const users = new Set();
+  for (const client of wss.clients) {
+    if (client.readyState === 1 && client.identified && client.user) users.add(client.user);
+  }
+  return [...users].sort();
+}
+
+function broadcastPresence() {
+  broadcast({ type: 'presence', users: onlineUsers() });
+}
+
+function sendDmList(user) {
+  const dms = store.listDMsFor(user);
+  broadcast({ type: 'dms', dms }, (c) => c.user === user);
+}
+
+/** Move a client into a channel and send it the active-channel + history. */
+function joinClient(ws, channelId) {
+  ws.channel = channelId;
+  send(ws, { type: 'active-channel', channel: channelId });
+  send(ws, { type: 'history', channel: channelId, messages: store.getMessages(channelId) });
+}
+
 wss.on('connection', (ws, req) => {
   if (!isSameNetwork(req.socket.remoteAddress)) {
-    ws.send(JSON.stringify({ type: 'error', error: 'Forbidden: not on the same network.' }));
+    send(ws, { type: 'error', error: 'Forbidden: not on the same network.' });
     ws.close();
     return;
   }
 
   ws.user = 'anonymous';
+  ws.identified = false;
   ws.channel = 'general';
-  ws.send(JSON.stringify({ type: 'channels', channels: store.listChannels() }));
-  ws.send(JSON.stringify({ type: 'history', channel: ws.channel, messages: store.getMessages(ws.channel) }));
+
+  send(ws, { type: 'channels', channels: store.listChannels() });
+  send(ws, { type: 'dms', dms: store.listDMsFor(ws.user) });
+  send(ws, { type: 'presence', users: onlineUsers() });
+  joinClient(ws, 'general');
 
   ws.on('message', (raw) => {
     let data;
@@ -95,44 +138,86 @@ wss.on('connection', (ws, req) => {
     }
 
     switch (data.type) {
-      case 'identify':
-        ws.user = String(data.user || ws.user).slice(0, 60);
+      case 'identify': {
+        ws.user = String(data.user || 'anonymous').slice(0, 60).trim() || 'anonymous';
+        ws.identified = true;
+        broadcastPresence();
+        send(ws, { type: 'dms', dms: store.listDMsFor(ws.user) });
         break;
-      case 'join':
-        if (store.hasChannel(data.channel)) {
-          ws.channel = data.channel;
-          ws.send(JSON.stringify({ type: 'history', channel: data.channel, messages: store.getMessages(data.channel) }));
-        }
+      }
+
+      case 'join': {
+        if (store.canAccess(data.channel, ws.user)) joinClient(ws, data.channel);
+        else send(ws, { type: 'error', error: 'No access to that conversation.' });
         break;
-      case 'create-channel':
+      }
+
+      case 'create-channel': {
         if (data.name) store.createChannel(data.name);
         break;
-      case 'message':
+      }
+
+      case 'open-dm': {
+        const target = String(data.user || '').slice(0, 60).trim();
+        if (!target || target === ws.user) break;
+        const dm = store.getOrCreateDM(ws.user, target);
+        joinClient(ws, dm.id);
+        sendDmList(ws.user);
+        sendDmList(target);
+        break;
+      }
+
+      case 'message': {
         store.addMessage(data.channel || ws.channel, {
-          user: data.user || ws.user,
+          user: ws.user,
           text: data.text,
           source: data.source,
         });
         break;
+      }
+
+      case 'typing': {
+        broadcast(
+          { type: 'typing', channel: ws.channel, user: ws.user },
+          (c) => c !== ws && c.channel === ws.channel
+        );
+        break;
+      }
+
+      case 'edit': {
+        store.editMessage(data.messageId, ws.user, data.text);
+        break;
+      }
+
+      case 'delete': {
+        store.deleteMessage(data.messageId, ws.user);
+        break;
+      }
+
+      case 'react': {
+        store.toggleReaction(data.messageId, ws.user, data.emoji);
+        break;
+      }
+
       default:
         break;
     }
   });
+
+  ws.on('close', () => broadcastPresence());
 });
 
-// Fan out store events to connected WebSocket clients.
+// Fan out store events to the clients viewing the affected channel.
 store.on('message', (message) => {
-  const payload = JSON.stringify({ type: 'message', message });
-  for (const client of wss.clients) {
-    if (client.readyState === 1 && client.channel === message.channel) client.send(payload);
-  }
+  broadcast({ type: 'message', message }, (c) => c.channel === message.channel);
+});
+
+store.on('message-updated', (message) => {
+  broadcast({ type: 'message-updated', message }, (c) => c.channel === message.channel);
 });
 
 store.on('channels', (channels) => {
-  const payload = JSON.stringify({ type: 'channels', channels });
-  for (const client of wss.clients) {
-    if (client.readyState === 1) client.send(payload);
-  }
+  broadcast({ type: 'channels', channels });
 });
 
 server.listen(PORT, HOST, () => {
