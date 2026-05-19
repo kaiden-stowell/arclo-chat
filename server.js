@@ -251,13 +251,21 @@ wss.on('connection', (ws, req) => {
   ws.on('close', () => broadcastPresence());
 });
 
-// Fan out store events to the clients viewing the affected channel.
+// A message reaches every client (regular channels) or only the DM's members.
+// Clients receive messages for channels they are not currently viewing so they
+// can raise notifications for them.
+function deliverableTo(message) {
+  const channel = store.getChannel(message.channel);
+  const isDm = channel && channel.type === 'dm';
+  return (client) => (isDm ? store.canAccess(message.channel, client.user) : true);
+}
+
 store.on('message', (message) => {
-  broadcast({ type: 'message', message }, (c) => c.channel === message.channel);
+  broadcast({ type: 'message', message }, deliverableTo(message));
 });
 
 store.on('message-updated', (message) => {
-  broadcast({ type: 'message-updated', message }, (c) => c.channel === message.channel);
+  broadcast({ type: 'message-updated', message }, deliverableTo(message));
 });
 
 store.on('channels', (channels) => {

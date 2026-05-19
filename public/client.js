@@ -332,6 +332,7 @@ function handle(data) {
       break;
     case 'message':
       upsertMessage(data.message);
+      handleIncoming(data.message);
       break;
     case 'message-updated':
       upsertMessage(data.message);
@@ -389,6 +390,80 @@ $('#composer').addEventListener('submit', (e) => {
   if (!text) return;
   send({ type: 'message', channel: current, text });
   input.value = '';
+});
+
+// --- notifications ---------------------------------------------------------
+
+const BASE_TITLE = 'arclo-chat';
+let unread = 0;
+let audioCtx = null;
+
+function updateTitle() {
+  document.title = unread > 0 ? `(${unread}) ${BASE_TITLE}` : BASE_TITLE;
+}
+
+/** Short soft "ping" so a message is noticed even with notifications off. */
+function playPing() {
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = 880;
+    gain.gain.value = 0.06;
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.25);
+    osc.stop(audioCtx.currentTime + 0.27);
+  } catch (e) {
+    /* audio unavailable — ignore */
+  }
+}
+
+function notify(msg) {
+  if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+  const popup = new Notification(`${msg.user} · ${channelLabel(msg.channel)}`, {
+    body: msg.text.slice(0, 140),
+    tag: msg.channel,
+    renotify: true,
+  });
+  popup.onclick = () => {
+    window.focus();
+    if (msg.channel !== current) joinChannel(msg.channel);
+    popup.close();
+  };
+}
+
+/** Runs for every incoming message — alerts unless you are already looking. */
+function handleIncoming(msg) {
+  if (msg.user === me()) return; // never notify about your own messages
+  if (msg.channel === current && document.hasFocus()) return;
+  unread += 1;
+  updateTitle();
+  playPing();
+  notify(msg);
+}
+
+// Browser notification permission and audio must be unlocked by a user gesture.
+function enableAlerts() {
+  if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  } catch (e) {
+    /* ignore */
+  }
+}
+
+document.addEventListener('click', enableAlerts, { once: true });
+document.addEventListener('keydown', enableAlerts, { once: true });
+window.addEventListener('focus', () => {
+  unread = 0;
+  updateTitle();
 });
 
 // --- responsive sidebar ----------------------------------------------------
