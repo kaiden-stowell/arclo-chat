@@ -30,7 +30,10 @@
     </aside>
 
     <main id="main">
-      <header id="channel-header">#general</header>
+      <header id="channel-header">
+        <button id="nav-toggle" type="button" aria-label="Toggle sidebar">☰</button>
+        <span id="channel-name">#general</span>
+      </header>
       <div id="messages"></div>
       <div id="typing"></div>
       <form id="composer">
@@ -38,6 +41,7 @@
         <button type="submit">Send</button>
       </form>
     </main>
+    <div id="backdrop"></div>
   </div>
   <div id="status">connecting…</div>
   <script src="client.js"></script>

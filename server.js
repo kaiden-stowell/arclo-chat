@@ -87,14 +87,16 @@ function qrPage(url, svg) {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>arclo-chat — scan to join</title>
 <style>
-  body { margin:0; min-height:100vh; display:flex; flex-direction:column;
-    align-items:center; justify-content:center; background:#1a1d21; color:#e8e8e8;
+  body { margin:0; min-height:100vh; box-sizing:border-box; padding:24px;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    text-align:center; background:#1a1d21; color:#e8e8e8;
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
   h1 { font-size:20px; margin:0 0 4px; }
   p { color:#9b9b9b; margin:0 0 18px; }
   .card { background:#fff; padding:18px; border-radius:14px; }
-  .card svg { width:280px; height:280px; display:block; }
-  a { color:#4a9eff; margin-top:18px; font-size:15px; text-decoration:none; }
+  .card svg { width:min(280px,72vw); height:auto; display:block; }
+  a { color:#4a9eff; margin-top:18px; font-size:15px; text-decoration:none;
+    word-break:break-all; }
 </style>
 </head>
 <body>

@@ -74,7 +74,10 @@ function renderPresence() {
       li.classList.add('self');
       li.appendChild(document.createTextNode(' (you)'));
     } else {
-      li.addEventListener('click', () => send({ type: 'open-dm', user }));
+      li.addEventListener('click', () => {
+        send({ type: 'open-dm', user });
+        closeNavOnMobile();
+      });
     }
     ul.appendChild(li);
   }
@@ -287,6 +290,7 @@ function clearTyping() {
 // --- navigation ------------------------------------------------------------
 
 function joinChannel(id) {
+  closeNavOnMobile();
   if (id === current) return;
   send({ type: 'join', channel: id });
 }
@@ -297,7 +301,7 @@ function setActiveChannel(id) {
   $('#messages').innerHTML = '';
   msgEls.clear();
   const label = channelLabel(id);
-  $('#channel-header').textContent = label;
+  $('#channel-name').textContent = label;
   $('#input').placeholder = `Message ${label}`;
   renderChannels();
   renderDms();
@@ -314,7 +318,7 @@ function handle(data) {
     case 'dms':
       dms = data.dms;
       renderDms();
-      if ($('#channel-header').textContent === current) $('#channel-header').textContent = channelLabel(current);
+      if ($('#channel-name').textContent === current) $('#channel-name').textContent = channelLabel(current);
       break;
     case 'presence':
       online = data.users;
@@ -385,6 +389,23 @@ $('#composer').addEventListener('submit', (e) => {
   if (!text) return;
   send({ type: 'message', channel: current, text });
   input.value = '';
+});
+
+// --- responsive sidebar ----------------------------------------------------
+
+function closeNavOnMobile() {
+  if (window.innerWidth <= 640) document.body.classList.add('nav-collapsed');
+}
+
+// Start collapsed on small screens; open on desktop.
+if (window.innerWidth <= 640) document.body.classList.add('nav-collapsed');
+
+$('#nav-toggle').addEventListener('click', () => {
+  document.body.classList.toggle('nav-collapsed');
+});
+
+$('#backdrop').addEventListener('click', () => {
+  document.body.classList.add('nav-collapsed');
 });
 
 connect();
