@@ -3,6 +3,7 @@
 const path = require('path');
 const http = require('http');
 const https = require('https');
+const net = require('net');
 const express = require('express');
 const { WebSocketServer } = require('ws');
 const QRCode = require('qrcode');
@@ -24,18 +25,17 @@ const HOST = process.env.HOST || '0.0.0.0';
 const store = new Store(DB_PATH);
 const DATA_DIR = path.dirname(DB_PATH);
 
-// HTTP by default so any device on the network can connect with no certificate
-// warnings. Set ARCLO_HTTPS=1 to serve HTTPS with a self-signed certificate,
-// which enables background Web Push (at the cost of an "unsafe" warning).
+// The chat is advertised as a plain http:// URL (no certificate warning). But
+// some browsers force-upgrade to https, so a self-signed certificate is kept
+// ready and TLS connections on the same port are accepted too (see below) —
+// this avoids a hard "can't establish a secure connection" failure.
 let tls = null;
-if (process.env.ARCLO_HTTPS === '1') {
-  try {
-    tls = loadOrCreateCert(DATA_DIR, lan && lan.address);
-  } catch (err) {
-    console.error('Could not set up HTTPS, falling back to HTTP:', err.message);
-  }
+try {
+  tls = loadOrCreateCert(DATA_DIR, lan && lan.address);
+} catch (err) {
+  console.error('Could not prepare the TLS fallback certificate:', err.message);
 }
-const scheme = tls ? 'https' : 'http';
+const scheme = 'http';
 
 // Stable VAPID keys for Web Push — regenerating them would break subscriptions.
 let vapidKeys = null;
@@ -197,10 +197,28 @@ app.get('/secret', (req, res) => {
 
 // --- WebSocket API ---------------------------------------------------------
 
-const server = tls
-  ? https.createServer({ key: tls.key, cert: tls.cert }, app)
-  : http.createServer(app);
-const wss = new WebSocketServer({ server });
+const httpServer = http.createServer(app);
+const httpsServer = tls ? https.createServer({ key: tls.key, cert: tls.cert }, app) : null;
+
+// One WebSocket server, fed upgrade events from whichever protocol was used.
+const wss = new WebSocketServer({ noServer: true });
+function routeUpgrade(req, socket, head) {
+  wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
+}
+httpServer.on('upgrade', routeUpgrade);
+if (httpsServer) httpsServer.on('upgrade', routeUpgrade);
+
+// Sniff each connection: a TLS handshake record starts with byte 0x16, so
+// those go to the HTTPS server; everything else is handled as plain HTTP.
+const server = net.createServer((socket) => {
+  socket.once('data', (buf) => {
+    socket.pause();
+    const target = httpsServer && buf[0] === 0x16 ? httpsServer : httpServer;
+    socket.unshift(buf);
+    target.emit('connection', socket);
+    process.nextTick(() => socket.resume());
+  });
+});
 
 function send(ws, obj) {
   if (ws.readyState === 1) ws.send(JSON.stringify(obj));
@@ -378,8 +396,7 @@ store.on('channels', (channels) => {
 
 server.listen(PORT, HOST, async () => {
   console.log(`arclo-chat listening on ${chatUrl}`);
-  console.log(`On this computer you can also open ${scheme}://localhost:${PORT}`);
-  if (!tls) console.log('Running over HTTP — set ARCLO_HTTPS=1 to enable background push.');
+  console.log(`On this computer you can also open http://localhost:${PORT}`);
   if (lan) {
     console.log(`Same-network access: anyone on ${lan.address}/${lan.netmask} — others are rejected.`);
   } else {

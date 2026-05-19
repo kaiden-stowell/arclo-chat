@@ -17,8 +17,6 @@ client reaches it through an HTTP/WebSocket API.
 - **Persistent history** — channels, messages, and reactions are stored in a
   SQLite file and survive restarts.
 - **Message alerts** — a sound and an unread-count badge for every new message.
-  Optional background push notifications are available over HTTPS
-  (`ARCLO_HTTPS=1`).
 
 ## Why "same network only"
 
@@ -93,8 +91,7 @@ curl -X POST http://192.168.1.20:4040/api/channels/general/messages \
 
 ## WebSocket API
 
-Connect to `ws://<host>:<port>` (`wss://` when running with `ARCLO_HTTPS=1`).
-All frames are JSON.
+Connect to `ws://<host>:<port>` (`wss://` also works). All frames are JSON.
 
 **Client → server**
 
@@ -152,10 +149,9 @@ CHAT_URL=http://192.168.1.20:4040 npm run agent-example
 ## Notes & limits
 
 - History is bounded to the most recent 1000 messages per channel.
-- By default the server runs over HTTP so any device can connect without a
-  certificate warning. Set `ARCLO_HTTPS=1` to serve HTTPS with a self-signed
-  certificate, which enables background Web Push — but browsers then show an
-  "unsafe" warning each device must click through, and some QR scanners
-  refuse the link entirely.
+- The server accepts both HTTP and HTTPS on the same port. The `http://` URL
+  (used by the QR code) connects with no warning; browsers that force an
+  `https://` upgrade still connect, showing a self-signed-certificate warning
+  to click through.
 - The network boundary is the only access control — anyone on the LAN can pick
   any display name. Add authentication before using on an untrusted network.
