@@ -534,4 +534,60 @@ $('#backdrop').addEventListener('click', () => {
   document.body.classList.add('nav-collapsed');
 });
 
+// --- resizable sidebar -----------------------------------------------------
+
+const SIDEBAR_MIN = 170;
+const SIDEBAR_MAX = 480;
+
+function setSidebarWidth(px) {
+  const w = Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, Math.round(px)));
+  document.documentElement.style.setProperty('--sidebar-width', `${w}px`);
+  return w;
+}
+
+const savedWidth = parseInt(localStorage.getItem('arclo-sidebar-w'), 10);
+if (savedWidth) setSidebarWidth(savedWidth);
+
+let resizing = false;
+$('#resizer').addEventListener('mousedown', (e) => {
+  resizing = true;
+  document.body.classList.add('resizing');
+  e.preventDefault();
+});
+document.addEventListener('mousemove', (e) => {
+  if (resizing) setSidebarWidth(e.clientX);
+});
+document.addEventListener('mouseup', () => {
+  if (!resizing) return;
+  resizing = false;
+  document.body.classList.remove('resizing');
+  const w = parseInt(
+    getComputedStyle(document.documentElement).getPropertyValue('--sidebar-width'),
+    10
+  );
+  localStorage.setItem('arclo-sidebar-w', String(w));
+});
+
+// --- adjustable text size --------------------------------------------------
+
+const TEXT_MIN = 12;
+const TEXT_MAX = 22;
+
+function setTextSize(px) {
+  const size = Math.max(TEXT_MIN, Math.min(TEXT_MAX, px));
+  document.documentElement.style.setProperty('--msg-font', `${size}px`);
+  localStorage.setItem('arclo-msg-font', String(size));
+  return size;
+}
+
+let msgFont = parseInt(localStorage.getItem('arclo-msg-font'), 10) || 14;
+setTextSize(msgFont);
+
+$('#text-smaller').addEventListener('click', () => {
+  msgFont = setTextSize(msgFont - 1);
+});
+$('#text-larger').addEventListener('click', () => {
+  msgFont = setTextSize(msgFont + 1);
+});
+
 connect();
