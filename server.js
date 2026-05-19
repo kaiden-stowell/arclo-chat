@@ -4,6 +4,7 @@ const path = require('path');
 const http = require('http');
 const express = require('express');
 const { WebSocketServer } = require('ws');
+const QRCode = require('qrcode');
 
 const { getLanInterface, normalizeIp, ipInSubnet } = require('./src/network');
 const { Store } = require('./src/store');
@@ -16,6 +17,10 @@ const lan = getLanInterface();
 const HOST = process.env.HOST || (lan && lan.address) || '127.0.0.1';
 
 const store = new Store(DB_PATH);
+
+// URL a phone on the same network uses — always the LAN address, never loopback.
+const chatUrl = `http://${(lan && lan.address) || HOST}:${PORT}`;
+let qrSvg = '';
 
 /**
  * Same-network gate: a connection is allowed only from loopback or from an
@@ -70,6 +75,43 @@ app.post('/api/channels/:id/messages', (req, res) => {
   const message = store.addMessage(req.params.id, { user, text, source });
   if (!message) return res.status(400).json({ error: 'text is required' });
   res.status(201).json({ message });
+});
+
+// --- QR code (open the chat on a phone on the same network) ----------------
+
+function qrPage(url, svg) {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>arclo-chat — scan to join</title>
+<style>
+  body { margin:0; min-height:100vh; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; background:#1a1d21; color:#e8e8e8;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  p { color:#9b9b9b; margin:0 0 18px; }
+  .card { background:#fff; padding:18px; border-radius:14px; }
+  .card svg { width:280px; height:280px; display:block; }
+  a { color:#4a9eff; margin-top:18px; font-size:15px; text-decoration:none; }
+</style>
+</head>
+<body>
+  <h1>Scan to join arclo-chat</h1>
+  <p>Your phone must be on the same Wi-Fi / network.</p>
+  <div class="card">${svg}</div>
+  <a href="${url}">${url}</a>
+</body>
+</html>`;
+}
+
+app.get('/api/qr.svg', (req, res) => {
+  res.type('image/svg+xml').send(qrSvg);
+});
+
+app.get('/qr', (req, res) => {
+  res.type('html').send(qrPage(chatUrl, qrSvg));
 });
 
 // --- WebSocket API ---------------------------------------------------------
@@ -220,11 +262,20 @@ store.on('channels', (channels) => {
   broadcast({ type: 'channels', channels });
 });
 
-server.listen(PORT, HOST, () => {
+server.listen(PORT, HOST, async () => {
   console.log(`arclo-chat listening on http://${HOST}:${PORT}`);
   if (lan) {
     console.log(`Same-network access: anyone on ${lan.address}/${lan.netmask} — others are rejected.`);
   } else {
     console.log('No LAN interface found — only loopback connections will be accepted.');
+  }
+  try {
+    qrSvg = await QRCode.toString(chatUrl, { type: 'svg', margin: 1 });
+    const terminalQr = await QRCode.toString(chatUrl, { type: 'terminal', small: true });
+    console.log(`\nScan with your phone (same network) to open ${chatUrl}\n`);
+    console.log(terminalQr);
+    console.log(`Or open ${chatUrl}/qr in a browser to show a larger code.\n`);
+  } catch (err) {
+    console.error('Could not generate QR code:', err.message);
   }
 });

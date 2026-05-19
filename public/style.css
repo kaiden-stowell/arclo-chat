@@ -29,7 +29,16 @@ body {
   overflow-y: auto;
 }
 
-.brand { font-size: 20px; font-weight: 700; padding: 4px 8px 12px; }
+.brand { font-size: 20px; font-weight: 700; padding: 4px 8px 4px; }
+
+#qr-link {
+  display: block;
+  padding: 2px 8px 8px;
+  font-size: 13px;
+  color: var(--accent);
+  text-decoration: none;
+}
+#qr-link:hover { text-decoration: underline; }
 
 .section-title {
   font-size: 11px;
