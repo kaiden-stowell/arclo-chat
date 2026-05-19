@@ -46,6 +46,10 @@ try {
 const chatUrl = `${scheme}://${(lan && lan.address) || HOST}:${PORT}`;
 let qrSvg = '';
 
+// Easter egg: a "secret" QR that rickrolls whoever scans it.
+const RICKROLL_URL = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
+let rickSvg = '';
+
 /**
  * Same-network gate: a connection is allowed only from loopback or from an
  * address inside this machine's LAN subnet.
@@ -148,12 +152,44 @@ function qrPage(url, svg) {
 </html>`;
 }
 
+function secretPage(svg) {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>arclo-chat — secret</title>
+<style>
+  body { margin:0; min-height:100vh; box-sizing:border-box; padding:24px;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    text-align:center; background:#1a1d21; color:#e8e8e8;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  p { color:#9b9b9b; margin:0 0 18px; }
+  .card { background:#fff; padding:18px; border-radius:14px; }
+  .card svg { width:min(280px,72vw); height:auto; display:block; }
+  .hint { margin-top:18px; font-size:13px; color:#6f7277; }
+</style>
+</head>
+<body>
+  <h1>🤫 You found the secret QR</h1>
+  <p>Scan it with your phone… if you dare.</p>
+  <div class="card">${svg}</div>
+  <p class="hint">No peeking at the link. Trust the process.</p>
+</body>
+</html>`;
+}
+
 app.get('/api/qr.svg', (req, res) => {
   res.type('image/svg+xml').send(qrSvg);
 });
 
 app.get('/qr', (req, res) => {
   res.type('html').send(qrPage(chatUrl, qrSvg));
+});
+
+app.get('/secret', (req, res) => {
+  res.type('html').send(secretPage(rickSvg));
 });
 
 // --- WebSocket API ---------------------------------------------------------
@@ -348,6 +384,7 @@ server.listen(PORT, HOST, async () => {
   }
   try {
     qrSvg = await QRCode.toString(chatUrl, { type: 'svg', margin: 1 });
+    rickSvg = await QRCode.toString(RICKROLL_URL, { type: 'svg', margin: 1 });
     const terminalQr = await QRCode.toString(chatUrl, { type: 'terminal', small: true });
     console.log(`\nScan with your phone (same network) to open ${chatUrl}\n`);
     console.log(terminalQr);

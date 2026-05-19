@@ -590,4 +590,15 @@ $('#text-larger').addEventListener('click', () => {
   msgFont = setTextSize(msgFont + 1);
 });
 
+// --- easter egg: 5 clicks on the version reveals the secret QR -------------
+
+let versionClicks = 0;
+$('#version').addEventListener('click', () => {
+  versionClicks += 1;
+  if (versionClicks >= 5) {
+    versionClicks = 0;
+    window.open('/secret', '_blank', 'noopener');
+  }
+});
+
 connect();
