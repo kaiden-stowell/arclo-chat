@@ -17,7 +17,9 @@ const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'data', 'arclo-chat.
 const lan = getLanInterface();
 // Bind to the LAN interface so the server is not reachable beyond the local
 // network. HOST can override (e.g. 0.0.0.0) but the subnet check still applies.
-const HOST = process.env.HOST || (lan && lan.address) || '127.0.0.1';
+// Bind to all interfaces so the host can use localhost and other devices can
+// use the LAN address. The subnet allowlist below is what restricts access.
+const HOST = process.env.HOST || '0.0.0.0';
 
 const store = new Store(DB_PATH);
 const DATA_DIR = path.dirname(DB_PATH);
@@ -336,7 +338,8 @@ store.on('channels', (channels) => {
 });
 
 server.listen(PORT, HOST, async () => {
-  console.log(`arclo-chat listening on ${scheme}://${HOST}:${PORT}`);
+  console.log(`arclo-chat listening on ${chatUrl}`);
+  console.log(`On this computer you can also open ${scheme}://localhost:${PORT}`);
   if (!tls) console.log('Running over HTTP — push notifications are disabled.');
   if (lan) {
     console.log(`Same-network access: anyone on ${lan.address}/${lan.netmask} — others are rejected.`);
