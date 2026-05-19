@@ -240,7 +240,7 @@ body.nav-collapsed #sidebar { margin-left: -250px; }
   font-style: italic;
 }
 
-#composer { display: flex; gap: 8px; padding: 8px 20px 16px; border-top: 1px solid #2a2d32; }
+#composer { display: flex; gap: 8px; padding: 8px 20px 44px; border-top: 1px solid #2a2d32; }
 #composer input { flex: 1; }
 #composer button {
   padding: 8px 18px;
@@ -292,5 +292,5 @@ body.nav-collapsed #sidebar { margin-left: -250px; }
   }
   .actions { display: flex; }
   #messages { padding: 12px 14px; }
-  #composer { padding: 8px 14px 14px; }
+  #composer { padding: 8px 14px 42px; }
 }
