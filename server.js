@@ -24,13 +24,16 @@ const HOST = process.env.HOST || '0.0.0.0';
 const store = new Store(DB_PATH);
 const DATA_DIR = path.dirname(DB_PATH);
 
-// HTTPS is required for service workers and Web Push. Generate (and reuse) a
-// self-signed certificate; fall back to HTTP only if that fails.
+// HTTP by default so any device on the network can connect with no certificate
+// warnings. Set ARCLO_HTTPS=1 to serve HTTPS with a self-signed certificate,
+// which enables background Web Push (at the cost of an "unsafe" warning).
 let tls = null;
-try {
-  tls = loadOrCreateCert(DATA_DIR, lan && lan.address);
-} catch (err) {
-  console.error('Could not set up HTTPS, falling back to HTTP:', err.message);
+if (process.env.ARCLO_HTTPS === '1') {
+  try {
+    tls = loadOrCreateCert(DATA_DIR, lan && lan.address);
+  } catch (err) {
+    console.error('Could not set up HTTPS, falling back to HTTP:', err.message);
+  }
 }
 const scheme = tls ? 'https' : 'http';
 
@@ -376,7 +379,7 @@ store.on('channels', (channels) => {
 server.listen(PORT, HOST, async () => {
   console.log(`arclo-chat listening on ${chatUrl}`);
   console.log(`On this computer you can also open ${scheme}://localhost:${PORT}`);
-  if (!tls) console.log('Running over HTTP — push notifications are disabled.');
+  if (!tls) console.log('Running over HTTP — set ARCLO_HTTPS=1 to enable background push.');
   if (lan) {
     console.log(`Same-network access: anyone on ${lan.address}/${lan.netmask} — others are rejected.`);
   } else {

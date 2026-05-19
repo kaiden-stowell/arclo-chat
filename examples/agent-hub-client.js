@@ -11,12 +11,9 @@
  * Override the target with CHAT_URL (HTTP) — the WS URL is derived from it.
  */
 
-// arclo-chat uses a self-signed certificate — accept it for this example.
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-
 const WebSocket = require('ws');
 
-const HTTP_URL = process.env.CHAT_URL || 'https://localhost:4040';
+const HTTP_URL = process.env.CHAT_URL || 'http://localhost:4040';
 const WS_URL = HTTP_URL.replace(/^http/, 'ws');
 const CHANNEL = process.env.CHANNEL || 'general';
 

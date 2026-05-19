@@ -16,8 +16,9 @@ client reaches it through an HTTP/WebSocket API.
   instantly; deletes leave a tombstone).
 - **Persistent history** — channels, messages, and reactions are stored in a
   SQLite file and survive restarts.
-- **Push notifications** — served over HTTPS with a service worker, so every
-  message raises a notification even when the chat tab is closed.
+- **Message alerts** — a sound and an unread-count badge for every new message.
+  Optional background push notifications are available over HTTPS
+  (`ARCLO_HTTPS=1`).
 
 ## Why "same network only"
 
@@ -55,9 +56,8 @@ npm install
 npm start
 ```
 
-The console prints the address to open, e.g. `https://192.168.1.20:4040`.
-Open it from any device on the same Wi-Fi/LAN, accept the one-time
-self-signed-certificate warning, set a display name, and chat.
+The console prints the address to open, e.g. `http://192.168.1.20:4040`.
+Open it from any device on the same Wi-Fi/LAN, set a display name, and chat.
 
 ### Configuration
 
@@ -83,19 +83,18 @@ automatically and is git-ignored.
 | POST   | `/api/push/subscribe`         | `{ "subscription", "user" }`   | Register for push     |
 
 A message posted over REST is broadcast live to every connected WebSocket
-client and triggers a push notification. Set `"source": "agent"` so it shows
-an **agent** badge in the UI. The server uses a self-signed certificate, so
-HTTP clients must skip TLS verification (`curl -k`).
+client. Set `"source": "agent"` so it shows an **agent** badge in the UI.
 
 ```bash
-curl -k -X POST https://192.168.1.20:4040/api/channels/general/messages \
+curl -X POST http://192.168.1.20:4040/api/channels/general/messages \
   -H 'Content-Type: application/json' \
   -d '{"user":"agent-hub","text":"deploy finished","source":"agent"}'
 ```
 
 ## WebSocket API
 
-Connect to `wss://<host>:<port>`. All frames are JSON.
+Connect to `ws://<host>:<port>` (`wss://` when running with `ARCLO_HTTPS=1`).
+All frames are JSON.
 
 **Client → server**
 
@@ -147,16 +146,16 @@ A `message` object looks like:
 over WebSocket. Run it on the same network as the server:
 
 ```bash
-CHAT_URL=https://192.168.1.20:4040 npm run agent-example
+CHAT_URL=http://192.168.1.20:4040 npm run agent-example
 ```
 
 ## Notes & limits
 
 - History is bounded to the most recent 1000 messages per channel.
-- The server generates a self-signed certificate into `data/` on first run so
-  browsers allow service workers / Web Push. Each device accepts the warning
-  once; HTTP clients should pass `curl -k` / disable TLS verification.
-- Push notifications need the device to reach a browser push service over the
-  internet. iOS only shows them for a chat installed to the home screen.
+- By default the server runs over HTTP so any device can connect without a
+  certificate warning. Set `ARCLO_HTTPS=1` to serve HTTPS with a self-signed
+  certificate, which enables background Web Push — but browsers then show an
+  "unsafe" warning each device must click through, and some QR scanners
+  refuse the link entirely.
 - The network boundary is the only access control — anyone on the LAN can pick
   any display name. Add authentication before using on an untrusted network.
